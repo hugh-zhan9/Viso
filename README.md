@@ -35,20 +35,32 @@
 ## 🚀 快速开始
 
 ### 1. 安装依赖与编译
-需要安装 **FFmpeg**。
+需要安装：
+- **Go 1.25+**
+- **FFmpeg**（需包含 `ffprobe` 与 `ffmpeg`）
+
 ```bash
+go mod tidy
 go build -o viso ./cmd/viso/main.go
 ```
 
 ### 2. 开始扫描
 ```bash
 ./viso scan [目录]
+# 例如：
+./viso scan ~/Videos -s 7 -d 10s -W 640 -H 360
 ```
 
 ### 常用参数
 *   `-s, --samples`: 采样点数量（默认 5）。增加采样点可提升精度，但会减慢扫描速度。
 *   `-d, --duration`: 最小保留时长（默认 `5s`）。
 *   `-W, --width` / `-H, --height`: 分辨率阈值（默认 `480x320`）。
+
+### 3. 构建验证
+```bash
+go test ./...
+./viso scan .
+```
 
 ## 📂 回收站机制
 文件永远不会被直接物理删除。它们被移动到扫描根目录下的 `.viso-trash` 文件夹中，并镜像了原有的目录层级。
