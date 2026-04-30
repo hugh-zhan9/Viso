@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/vcmaster/viso/internal/rules"
@@ -111,15 +112,27 @@ func runScan(opts scanOptions) error {
 		return nil
 	}
 
-	paths := make([]string, 0, len(report))
-	for path := range report {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
+	// 按类型分组
+	groups := make(map[string][]rules.Result)
+	groupOrder := []string{"文件内容重复", "疑似压缩副本", "疑似从原片截取的片段", "时长过短", "分辨率过低"}
 
-	for _, path := range paths {
-		res := report[path]
-		fmt.Fprintf(stdout, "- [%s] %s (%s)\n", res.RuleName, path, res.Reason)
+	for _, res := range report {
+		category := categorizeResult(res)
+		groups[category] = append(groups[category], res)
+	}
+
+	for _, cat := range groupOrder {
+		items := groups[cat]
+		if len(items) == 0 {
+			continue
+		}
+		sort.Slice(items, func(i, j int) bool {
+			return extractPath(items[i]) < extractPath(items[j])
+		})
+		fmt.Fprintf(stdout, "\n【%s】(%d 项)\n", cat, len(items))
+		for _, res := range items {
+			fmt.Fprintf(stdout, "  - %s\n    %s\n", extractPath(res), res.Reason)
+		}
 	}
 
 	return nil
@@ -128,4 +141,37 @@ func runScan(opts scanOptions) error {
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "用法:")
 	fmt.Fprintln(w, "  viso scan [目录] [-s 采样点] [-d 最小时长] [-W 最小宽] [-H 最小高]")
+}
+
+// categorizeResult 根据 Reason 内容判定分组类型
+func categorizeResult(res rules.Result) string {
+	switch {
+	case strings.Contains(res.Reason, "文件内容重复"):
+		return "文件内容重复"
+	case strings.Contains(res.Reason, "压缩副本"):
+		return "疑似压缩副本"
+	case strings.Contains(res.Reason, "截取的片段"):
+		return "疑似从原片截取的片段"
+	case strings.Contains(res.Reason, "时长过短"):
+		return "时长过短"
+	case strings.Contains(res.Reason, "分辨率过低"):
+		return "分辨率过低"
+	default:
+		return "其他"
+	}
+}
+
+// extractPath 从结果中提取文件路径
+func extractPath(res rules.Result) string {
+	if res.OriginalPath != "" {
+		return res.OriginalPath
+	}
+	// 从 Reason 中提取路径（格式: "... (原件: /path)" 或直接是被检测文件）
+	if idx := strings.LastIndex(res.Reason, "(原件: "); idx >= 0 {
+		end := strings.LastIndex(res.Reason, ")")
+		if end > idx+6 {
+			return res.Reason[idx+6 : end]
+		}
+	}
+	return res.Reason
 }

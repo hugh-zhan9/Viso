@@ -20,10 +20,12 @@ type VideoMetadata struct {
 	Format      string        `json:"format"`       // 编码格式
 	
 	// 用于去重的高级特征
-	PartialHash  string        `json:"partial_hash"`  // 采样哈希
-	Fingerprints [][]byte      `json:"fingerprints"`  // 视觉特征指纹集合 (多点采样)
-	FullHash     string        `json:"full_hash"`
-	PHash       string        `json:"p_hash"`       // 视觉指纹 (Perceptual Hash)
+	PartialHash   string        `json:"partial_hash"`   // 采样哈希
+	Fingerprints  [][]byte      `json:"fingerprints"`   // 视觉特征指纹集合 (多点采样, 原始像素)
+	PHashes       [][]byte      `json:"p_hashes"`       // 二值化感知哈希集合 (多点采样, bit array)
+	AudioPHashes  [][]byte      `json:"audio_p_hashes"` // 音频频谱感知哈希集合 (每10秒一段)
+	FullHash      string        `json:"full_hash"`
+	PHash         string        `json:"p_hash"`        // 视觉指纹 (Perceptual Hash)
 }
 
 // Resolution 返回分辨率的显示字符串
