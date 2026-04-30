@@ -21,6 +21,7 @@ var videoExtensions = map[string]bool{
 type Scanner struct {
 	Concurrency     int
 	OnFileProcessed func(total int, videoCount int)
+	OnPhaseChange   func(phase string)
 }
 
 func NewScanner(concurrency int) *Scanner {
@@ -91,7 +92,11 @@ func (s *Scanner) Scan(ctx context.Context, root string, sampleCount int) ([]*vi
 		g.Go(func() error {
 			for path := range paths {
 				// 传递 sampleCount
-				meta, err := video.ProbeVideo(path, sampleCount)
+				meta, err := video.ProbeVideo(path, sampleCount, func(phase string) {
+					if s.OnPhaseChange != nil {
+						s.OnPhaseChange(phase)
+					}
+				})
 				if err != nil {
 					meta = &video.VideoMetadata{Path: path}
 				}

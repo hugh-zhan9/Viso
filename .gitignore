@@ -4,3 +4,4 @@ viso_plan*.json
 *.exe
 vendor/
 .DS_Store
+.omx/

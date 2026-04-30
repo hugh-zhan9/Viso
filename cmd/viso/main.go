@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/vcmaster/viso/internal/rules"
@@ -94,10 +95,46 @@ func parseScanArgs(args []string) (scanOptions, error) {
 
 func runScan(opts scanOptions) error {
 	sc := scanner.NewScanner(runtime.NumCPU())
+
+	// 使用原子变量存储最新计数和阶段，供动画 goroutine 读取
+	var latestTotal, latestVideo int64
+	var latestPhase atomic.Value
+	latestPhase.Store("")
 	sc.OnFileProcessed = func(total int, videoCount int) {
-		fmt.Fprintf(os.Stderr, "\r正在扫描... %d 个文件，%d 个视频文件", total, videoCount)
+		atomic.StoreInt64(&latestTotal, int64(total))
+		atomic.StoreInt64(&latestVideo, int64(videoCount))
 	}
+	sc.OnPhaseChange = func(phase string) {
+		latestPhase.Store(phase)
+	}
+
+	// 启动动画 goroutine，每 500ms 刷新一次省略号
+	done := make(chan struct{})
+	go func() {
+		dots := []string{".", "..", "..."}
+		i := 0
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				t := atomic.LoadInt64(&latestTotal)
+				v := atomic.LoadInt64(&latestVideo)
+				phase := latestPhase.Load().(string)
+				if phase != "" {
+					fmt.Fprintf(os.Stderr, "\r正在扫描中，第 %d 个文件，%d 个视频文件，%s%s   ", t, v, phase, dots[i%3])
+				} else {
+					fmt.Fprintf(os.Stderr, "\r正在扫描中，第 %d 个文件，%d 个视频文件%s   ", t, v, dots[i%3])
+				}
+				i++
+			}
+		}
+	}()
+
 	videos, err := sc.Scan(context.Background(), opts.root, opts.samples)
+	close(done)
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
 		return err
@@ -135,7 +172,8 @@ func runScan(opts scanOptions) error {
 		})
 		fmt.Fprintf(stdout, "\n【%s】(%d 项)\n", cat, len(items))
 		for _, res := range items {
-			fmt.Fprintf(stdout, "  - %s\n    %s\n", extractPath(res), res.Reason)
+			path := extractPath(res)
+			fmt.Fprintf(stdout, "  - %s\n    %s\n", clickablePath(path), makeReasonClickable(res.Reason))
 		}
 	}
 
@@ -178,4 +216,24 @@ func extractPath(res rules.Result) string {
 		}
 	}
 	return res.Reason
+}
+
+// clickablePath 用 OSC 8 转义序列将路径包装为终端可点击链接
+func clickablePath(path string) string {
+	return fmt.Sprintf("\033]8;;file://%s\033\\%s\033]8;;\033\\", path, path)
+}
+
+// makeReasonClickable 将 Reason 中的 (原件: /path) 部分的路径也变为可点击链接
+func makeReasonClickable(reason string) string {
+	const prefix = "(原件: "
+	idx := strings.LastIndex(reason, prefix)
+	if idx < 0 {
+		return reason
+	}
+	end := strings.LastIndex(reason, ")")
+	if end <= idx+len(prefix) {
+		return reason
+	}
+	originalPath := reason[idx+len(prefix) : end]
+	return reason[:idx+len(prefix)] + clickablePath(originalPath) + reason[end:]
 }

@@ -48,3 +48,12 @@ Run `go test ./...` before every commit.
 - `ffmpeg` and `ffprobe` must be available in `PATH`.
 - Never hardcode absolute local paths in code or docs.
 - Keep `.viso-trash` excluded from scans; avoid destructive delete commands in automation.
+
+
+<claude-mem-context>
+# Memory Context
+
+# [Viso] recent context, 2026-04-30 3:48pm GMT+8
+
+No previous sessions found.
+</claude-mem-context>
