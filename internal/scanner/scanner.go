@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/vcmaster/viso/internal/video"
@@ -18,7 +19,8 @@ var videoExtensions = map[string]bool{
 
 // Scanner 并发扫描视频元数据
 type Scanner struct {
-	Concurrency int
+	Concurrency     int
+	OnFileProcessed func(total int, videoCount int)
 }
 
 func NewScanner(concurrency int) *Scanner {
@@ -38,13 +40,14 @@ func (s *Scanner) Scan(ctx context.Context, root string, sampleCount int) ([]*vi
 	paths := make(chan string, 100)
 
 	// ... (遍历逻辑不变)
+	var totalFiles int64
 	g.Go(func() error {
 		defer close(paths)
 		return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return nil
 			}
-			
+
 			// 绝对屏蔽：只要路径中包含回收站目录名，直接跳过
 			if strings.Contains(path, ".viso-trash") {
 				if info.IsDir() {
@@ -56,7 +59,7 @@ func (s *Scanner) Scan(ctx context.Context, root string, sampleCount int) ([]*vi
 			if info.IsDir() {
 				return nil
 			}
-			
+
 			// 排除下载中的临时文件
 			ext := strings.ToLower(filepath.Ext(path))
 			if skipExtensions[ext] {
@@ -67,6 +70,8 @@ func (s *Scanner) Scan(ctx context.Context, root string, sampleCount int) ([]*vi
 			if time.Since(info.ModTime()) < 5*time.Minute {
 				return nil
 			}
+
+			atomic.AddInt64(&totalFiles, 1)
 
 			if videoExtensions[ext] {
 				select {
@@ -80,6 +85,7 @@ func (s *Scanner) Scan(ctx context.Context, root string, sampleCount int) ([]*vi
 	})
 
 	// 2. 并发提取元数据
+	var processed int64
 	results := make(chan *video.VideoMetadata, 100)
 	for i := 0; i < s.Concurrency; i++ {
 		g.Go(func() error {
@@ -89,7 +95,7 @@ func (s *Scanner) Scan(ctx context.Context, root string, sampleCount int) ([]*vi
 				if err != nil {
 					meta = &video.VideoMetadata{Path: path}
 				}
-				
+
 				// 获取文件基础属性
 				info, _ := os.Stat(path)
 				if info != nil {
@@ -101,6 +107,11 @@ func (s *Scanner) Scan(ctx context.Context, root string, sampleCount int) ([]*vi
 				// 计算采样哈希
 				hash, _ := video.GetPartialHash(path)
 				meta.PartialHash = hash
+
+				videoCount := int(atomic.AddInt64(&processed, 1))
+				if s.OnFileProcessed != nil {
+					s.OnFileProcessed(int(atomic.LoadInt64(&totalFiles)), videoCount)
+				}
 
 				select {
 				case results <- meta:

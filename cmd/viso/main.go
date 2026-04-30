@@ -94,7 +94,11 @@ func parseScanArgs(args []string) (scanOptions, error) {
 
 func runScan(opts scanOptions) error {
 	sc := scanner.NewScanner(runtime.NumCPU())
+	sc.OnFileProcessed = func(total int, videoCount int) {
+		fmt.Fprintf(os.Stderr, "\r正在扫描... %d 个文件，%d 个视频文件", total, videoCount)
+	}
 	videos, err := sc.Scan(context.Background(), opts.root, opts.samples)
+	fmt.Fprintln(os.Stderr)
 	if err != nil {
 		return err
 	}
